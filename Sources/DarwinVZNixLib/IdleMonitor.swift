@@ -6,18 +6,18 @@ class IdleMonitor {
     private var lastActivityTime: Date = .init()
     private var idleCheckTimer: DispatchSourceTimer?
     private let timeoutMinutes: Int
-    private let guestIPFileURL: URL
+    private let guestHostname: String
     private let queue: DispatchQueue
     private let onIdleShutdown: () -> Void
 
     init(
         timeoutMinutes: Int,
-        guestIPFileURL: URL,
+        guestHostname: String,
         queue: DispatchQueue,
         onIdleShutdown: @escaping () -> Void
     ) {
         self.timeoutMinutes = timeoutMinutes
-        self.guestIPFileURL = guestIPFileURL
+        self.guestHostname = guestHostname
         self.queue = queue
         self.onIdleShutdown = onIdleShutdown
     }
@@ -43,18 +43,9 @@ class IdleMonitor {
     }
 
     private func checkActivity() -> Bool {
-        guard let guestIP = try? String(
-            contentsOf: guestIPFileURL,
-            encoding: .utf8
-        ).trimmingCharacters(in: .whitespacesAndNewlines),
-            !guestIP.isEmpty
-        else {
-            return false
-        }
-
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
-        process.arguments = ["-i", "@\(guestIP):22", "-n", "-P"]
+        process.arguments = ["-i", "@\(guestHostname).local:22", "-n", "-P"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice

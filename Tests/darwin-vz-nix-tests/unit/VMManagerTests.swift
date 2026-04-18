@@ -74,8 +74,8 @@ struct VMManagerTests {
         }
     }
 
-    @Test("guestIPFileURL points to expected location")
-    func guestIPFileLocation() {
+    @Test("guestHostnameFileURL points to expected location")
+    func guestHostnameFileLocation() {
         let stateDirectory = TestHelpers.createTempDirectory()
         defer { TestHelpers.removeTempItem(at: stateDirectory) }
 
@@ -90,9 +90,9 @@ struct VMManagerTests {
             stateDirectory: stateDirectory
         )
 
-        let guestIPFile = config.guestIPFileURL
-        #expect(guestIPFile.lastPathComponent == "guest-ip")
-        #expect(guestIPFile.deletingLastPathComponent().path == stateDirectory.path)
+        let guestHostnameFile = config.guestHostnameFileURL
+        #expect(guestHostnameFile.lastPathComponent == "guest-hostname")
+        #expect(guestHostnameFile.deletingLastPathComponent().path == stateDirectory.path)
     }
 
     @Test("withPIDFile removes stale PID file when startup work fails")

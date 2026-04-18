@@ -1,14 +1,19 @@
 {
   lib,
+  runCommandLocal,
   stdenv,
   darwin,
+  apple-sdk_15,
+  cctools,
   swift-bin,
   swift-argument-parser-src,
   swift-testing-src,
   swift-syntax-src,
+  xcbuild,
 }:
 
 let
+  appleSdk = apple-sdk_15;
   workspaceStateFile = builtins.toFile "workspace-state.json" (
     builtins.toJSON {
       version = 6;
@@ -70,6 +75,12 @@ let
       };
     }
   );
+
+  swiftpmCctools = runCommandLocal "swiftpm-cctools" { } ''
+    mkdir -p "$out/bin"
+    ln -s ${cctools}/bin/libtool "$out/bin/libtool"
+    ln -s ${cctools}/bin/vtool "$out/bin/vtool"
+  '';
 in
 
 stdenv.mkDerivation {
@@ -95,6 +106,9 @@ stdenv.mkDerivation {
   nativeBuildInputs = [
     swift-bin
     darwin.sigtool
+    xcbuild.xcrun
+    swiftpmCctools
+    appleSdk
   ];
 
   configurePhase = ''
@@ -109,11 +123,29 @@ stdenv.mkDerivation {
     runHook postConfigure
   '';
 
+  postPatch = ''
+    while IFS= read -r -d $'\0' file; do
+      if grep -q '/usr/bin/xcrun' "$file"; then
+        substituteInPlace "$file" --replace-fail '/usr/bin/xcrun' 'xcrun'
+      fi
+    done < <(find Sources -type f -name '*.swift' -print0)
+
+    if grep -R -n '/usr/bin/xcrun' Sources; then
+      echo 'Found remaining absolute /usr/bin/xcrun references in Sources after patching.' >&2
+      exit 1
+    fi
+  '';
+
   buildPhase = ''
     runHook preBuild
 
     export HOME=$TMPDIR
-    swift build -c release --disable-sandbox
+    export DEVELOPER_DIR=${appleSdk}
+    export SDKROOT=${appleSdk.sdkroot}
+    export PATH=${lib.makeBinPath [ xcbuild.xcrun swiftpmCctools ]}:$PATH
+    export LIBTOOL=${swiftpmCctools}/bin/libtool
+    export VTOOL=${swiftpmCctools}/bin/vtool
+    TERM=dumb swift build -c release --disable-sandbox --disable-experimental-prebuilts
 
     runHook postBuild
   '';

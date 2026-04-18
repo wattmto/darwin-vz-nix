@@ -19,9 +19,20 @@ struct ConstantsTests {
         #expect(Constants.sshKeysTag == "ssh-keys")
     }
 
-    @Test("guestHostname has expected value")
-    func guestHostnameValue() {
-        #expect(Constants.guestHostname == "darwin-vz-guest")
+    @Test("defaultGuestHostname has expected value")
+    func defaultGuestHostnameValue() {
+        #expect(Constants.defaultGuestHostname == "darwin-vz-guest")
+    }
+
+    @Test("shared directory config tag has expected string value")
+    func sharedDirectoryConfigTagValue() {
+        #expect(Constants.sharedDirectoryConfigTag == "shared-dir-config")
+    }
+
+    @Test("shared directory tags are generated deterministically")
+    func sharedDirectoryTagValue() {
+        #expect(Constants.sharedDirectoryTag(for: 0) == "shared-dir-1")
+        #expect(Constants.sharedDirectoryTag(for: 1) == "shared-dir-2")
     }
 
     @Test("MAC address matches valid format")

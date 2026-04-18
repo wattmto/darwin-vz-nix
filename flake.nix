@@ -32,6 +32,12 @@
       pkgs = nixpkgs.legacyPackages.${system};
       nurPkgs = nur-packages.legacyPackages.${system};
       linuxSystem = "aarch64-linux";
+      appleSdk = pkgs.apple-sdk_15;
+      swiftpmCctools = pkgs.runCommandLocal "swiftpm-cctools-tests" { } ''
+        mkdir -p "$out/bin"
+        ln -s ${pkgs.cctools}/bin/libtool "$out/bin/libtool"
+        ln -s ${pkgs.cctools}/bin/vtool "$out/bin/vtool"
+      '';
       darwinVzNix = pkgs.callPackage ./nix/package.nix {
         swift-bin = nurPkgs.swift-bin;
         swift-argument-parser-src = nurPkgs.swift-argument-parser;
@@ -77,15 +83,22 @@
       # Checks for aarch64-darwin
       checks.${system} = {
         darwin-vz-nix = darwinVzNix;
-        swift-test = darwinVzNix.overrideAttrs (_: {
+        swift-test = darwinVzNix.overrideAttrs (old: {
           name = "darwin-vz-nix-test";
+          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
+            pkgs.xcbuild.xcrun
+            swiftpmCctools
+            appleSdk
+          ];
           buildPhase = ''
             runHook preBuild
             export HOME=$TMPDIR
-            unset SDKROOT DEVELOPER_DIR
-            export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-            export NIX_ENFORCE_PURITY=0
-            swift test --disable-sandbox
+            export DEVELOPER_DIR=${appleSdk}
+            export SDKROOT=${appleSdk.sdkroot}
+            export PATH=${lib.makeBinPath [ pkgs.xcbuild.xcrun swiftpmCctools ]}:$PATH
+            export LIBTOOL=${swiftpmCctools}/bin/libtool
+            export VTOOL=${swiftpmCctools}/bin/vtool
+            TERM=dumb swift test --disable-sandbox --disable-experimental-prebuilts
             runHook postBuild
           '';
           installPhase = ''

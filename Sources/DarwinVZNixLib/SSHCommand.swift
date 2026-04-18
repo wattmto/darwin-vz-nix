@@ -9,6 +9,9 @@ public struct SSH: AsyncParsableCommand {
     @Argument(help: "Additional arguments to pass to ssh")
     var extraArgs: [String] = []
 
+    @Option(name: .long, help: "Guest hostname for mDNS/SSH (defaults to value recorded in state)")
+    var hostname: String?
+
     @Option(name: .long, help: "State directory for VM data (default: ~/.local/share/darwin-vz-nix)")
     var stateDir: String?
 
@@ -25,6 +28,9 @@ public struct SSH: AsyncParsableCommand {
         }
 
         let networkManager = NetworkManager(stateDirectory: stateDirectory)
-        try networkManager.connectSSH(extraArgs: extraArgs)
+        try networkManager.connectSSH(
+            hostname: hostname ?? networkManager.readGuestHostname(),
+            extraArgs: extraArgs
+        )
     }
 }

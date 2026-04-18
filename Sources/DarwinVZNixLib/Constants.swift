@@ -23,9 +23,19 @@ enum Constants {
 
     // MARK: - Network Constants (Cross-Language Contract)
 
-    /// Guest hostname used for DHCP lease discovery.
-    /// Nix counterpart: nix/guest/networking.nix — networking.hostName
-    static let guestHostname = "darwin-vz-guest"
+    /// Default guest hostname used for mDNS discovery.
+    /// The effective hostname can be overridden at boot via the kernel command line.
+    static let defaultGuestHostname = "darwin-vz-guest"
+
+    /// VirtioFS tag for the host-provided shared directory manifest.
+    static let sharedDirectoryConfigTag = "shared-dir-config"
+
+    /// Prefix used when generating VirtioFS tags for user-provided shared directories.
+    static let sharedDirectoryTagPrefix = "shared-dir-"
+
+    static func sharedDirectoryTag(for index: Int) -> String {
+        "\(sharedDirectoryTagPrefix)\(index + 1)"
+    }
 
     /// Deterministic locally-administered MAC address for the VM.
     /// "02" = locally administered + unicast; "da:72:56" = mnemonic for "darVZ".

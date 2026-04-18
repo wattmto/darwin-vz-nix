@@ -55,6 +55,7 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
         let bootLoader = VZLinuxBootLoader(kernelURL: config.kernelURL)
         bootLoader.initialRamdiskURL = config.initrdURL
         var cmdline = "console=hvc0 root=/dev/vda"
+        cmdline += " systemd.hostname=\(config.guestHostname)"
         if let systemURL = config.systemURL {
             cmdline += " init=\(systemURL.path)/init"
         }
@@ -89,7 +90,7 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
         let blockDevice = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
         vmConfig.storageDevices = [blockDevice]
 
-        // Network (NAT) with deterministic MAC for DHCP lease discovery
+        // Network (NAT) with deterministic MAC address
         let networkDevice = VZVirtioNetworkDeviceConfiguration()
         networkDevice.attachment = VZNATNetworkDeviceAttachment()
         if let mac = VZMACAddress(string: Constants.macAddressString) {
@@ -153,6 +154,18 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
         let sshKeysShare = try VirtioFSManager.createSSHKeysShare(sshDirectory: config.sshDirectory)
         directoryShares.append(sshKeysShare)
 
+        // VirtioFS: Shared directory configuration manifest
+        let sharedDirectoryConfigShare = try VirtioFSManager.createSharedDirectoryConfigShare(
+            configDirectory: config.sharedDirectoryConfigDirectory
+        )
+        directoryShares.append(sharedDirectoryConfigShare)
+
+        // VirtioFS: User-provided shared directories
+        for (index, sharedDirectory) in config.sharedDirectories.enumerated() {
+            let directoryShare = try VirtioFSManager.createSharedDirectoryShare(sharedDirectory, index: index)
+            directoryShares.append(directoryShare)
+        }
+
         vmConfig.directorySharingDevices = directoryShares
 
         // Validate the configuration
@@ -203,7 +216,7 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
         if idleTimeoutMinutes > 0 {
             let monitor = IdleMonitor(
                 timeoutMinutes: idleTimeoutMinutes,
-                guestIPFileURL: config.guestIPFileURL,
+                guestHostname: config.guestHostname,
                 queue: queue,
                 onIdleShutdown: { [weak self] in
                     guard let self = self else { return }
@@ -236,7 +249,6 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
             // The VM runs in-process, so process exit terminates it immediately.
             virtualMachine = nil
             removePIDFile()
-            removeGuestIPFile()
             return
         }
 
@@ -256,7 +268,6 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
 
         virtualMachine = nil
         removePIDFile()
-        removeGuestIPFile()
     }
 
     // MARK: - VZVirtualMachineDelegate
@@ -264,14 +275,12 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
     func virtualMachine(_: VZVirtualMachine, didStopWithError error: Error) {
         DaemonLogger.vm.error("VM stopped with error: \(error.localizedDescription)")
         removePIDFile()
-        removeGuestIPFile()
         exit(1)
     }
 
     func guestDidStop(_: VZVirtualMachine) {
         DaemonLogger.vm.info("VM guest has stopped.")
         removePIDFile()
-        removeGuestIPFile()
         exit(0)
     }
 
@@ -329,10 +338,6 @@ class VMManager: NSObject, VZVirtualMachineDelegate {
 
     private func removePIDFile() {
         try? FileManager.default.removeItem(at: config.pidFileURL)
-    }
-
-    private func removeGuestIPFile() {
-        try? FileManager.default.removeItem(at: config.guestIPFileURL)
     }
 
     // MARK: - Static Helpers

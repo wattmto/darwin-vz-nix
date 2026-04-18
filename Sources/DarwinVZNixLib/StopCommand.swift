@@ -70,8 +70,5 @@ public struct Stop: AsyncParsableCommand {
             throw ValidationError("Failed to send signal to PID \(pid): \(err)")
         }
 
-        // Clean up state files after stop
-        let guestIPFileURL = stateDirectory.appendingPathComponent("guest-ip")
-        try? FileManager.default.removeItem(at: guestIPFileURL)
     }
 }

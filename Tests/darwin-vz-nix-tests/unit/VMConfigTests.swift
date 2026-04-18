@@ -333,15 +333,26 @@ struct VMConfigTests {
         #expect(config.consoleLogURL.lastPathComponent == "console.log")
     }
 
-    @Test("guestIPFileURL ends with guest-ip")
-    func guestIPFileURLPath() {
+    @Test("guestHostnameFileURL ends with guest-hostname")
+    func guestHostnameFileURLPath() {
         let stateDir = URL(fileURLWithPath: "/tmp/test-state")
         let config = VMConfig(
             kernelURL: URL(fileURLWithPath: "/fake/kernel"),
             initrdURL: URL(fileURLWithPath: "/fake/initrd"),
             stateDirectory: stateDir
         )
-        #expect(config.guestIPFileURL.lastPathComponent == "guest-ip")
+        #expect(config.guestHostnameFileURL.lastPathComponent == "guest-hostname")
+    }
+
+    @Test("sharedDirectoryManifestURL ends with shared-directories.tsv")
+    func sharedDirectoryManifestURLPath() {
+        let stateDir = URL(fileURLWithPath: "/tmp/test-state")
+        let config = VMConfig(
+            kernelURL: URL(fileURLWithPath: "/fake/kernel"),
+            initrdURL: URL(fileURLWithPath: "/fake/initrd"),
+            stateDirectory: stateDir
+        )
+        #expect(config.sharedDirectoryManifestURL.lastPathComponent == "shared-directories.tsv")
     }
 
     @Test("sshKeyURL path contains ssh/id_ed25519")
@@ -396,12 +407,86 @@ struct VMConfigTests {
         #expect(url.path.hasPrefix(stateDir.path))
     }
 
-    @Test("guestIPFileURL(for:) produces correct path")
-    func staticGuestIPFileURL() {
+    @Test("guestHostnameFileURL(for:) produces correct path")
+    func staticGuestHostnameFileURL() {
         let stateDir = URL(fileURLWithPath: "/tmp/test-state")
-        let url = VMConfig.guestIPFileURL(for: stateDir)
-        #expect(url.lastPathComponent == "guest-ip")
+        let url = VMConfig.guestHostnameFileURL(for: stateDir)
+        #expect(url.lastPathComponent == "guest-hostname")
         #expect(url.path.hasPrefix(stateDir.path))
+    }
+
+    @Test("sharedDirectoryManifestURL(for:) produces correct path")
+    func staticSharedDirectoryManifestURL() {
+        let stateDir = URL(fileURLWithPath: "/tmp/test-state")
+        let url = VMConfig.sharedDirectoryManifestURL(for: stateDir)
+        #expect(url.lastPathComponent == "shared-directories.tsv")
+        #expect(url.path.hasPrefix(stateDir.path))
+    }
+
+    // MARK: - SharedDirectory parsing and validation
+
+    @Test("SharedDirectory parses key-value format")
+    func parseSharedDirectoryKeyValue() throws {
+        let directory = try SharedDirectory.parse(
+            "hostPath=/tmp/host,mountPoint=/mnt/host,readOnly=true"
+        )
+        #expect(directory.hostPath.path == "/tmp/host")
+        #expect(directory.mountPoint == "/mnt/host")
+        #expect(directory.readOnly == true)
+    }
+
+    @Test("SharedDirectory parses JSON format")
+    func parseSharedDirectoryJSON() throws {
+        let directory = try SharedDirectory.parse(
+            #"{"hostPath":"/tmp/host","mountPoint":"/mnt/host"}"#
+        )
+        #expect(directory.hostPath.path == "/tmp/host")
+        #expect(directory.mountPoint == "/mnt/host")
+        #expect(directory.readOnly == false)
+    }
+
+    @Test("validate throws invalidGuestHostname for invalid hostname")
+    func validateInvalidGuestHostname() throws {
+        let kernel = TestHelpers.createTempFile(content: "kernel")
+        let initrd = TestHelpers.createTempFile(content: "initrd")
+        defer {
+            TestHelpers.removeTempItem(at: kernel.deletingLastPathComponent())
+            TestHelpers.removeTempItem(at: initrd.deletingLastPathComponent())
+        }
+
+        let config = VMConfig(
+            kernelURL: kernel,
+            initrdURL: initrd,
+            guestHostname: "bad.hostname"
+        )
+
+        #expect(throws: VMConfigError.self) {
+            try config.validate()
+        }
+    }
+
+    @Test("validate rejects reserved shared directory mount points")
+    func validateReservedSharedDirectoryMountPoint() throws {
+        let kernel = TestHelpers.createTempFile(content: "kernel")
+        let initrd = TestHelpers.createTempFile(content: "initrd")
+        let sharedDirectoryHostPath = TestHelpers.createTempDirectory()
+        defer {
+            TestHelpers.removeTempItem(at: kernel.deletingLastPathComponent())
+            TestHelpers.removeTempItem(at: initrd.deletingLastPathComponent())
+            TestHelpers.removeTempItem(at: sharedDirectoryHostPath)
+        }
+
+        let config = VMConfig(
+            kernelURL: kernel,
+            initrdURL: initrd,
+            sharedDirectories: [
+                SharedDirectory(hostPath: sharedDirectoryHostPath, mountPoint: "/run/ssh-keys")
+            ]
+        )
+
+        #expect(throws: VMConfigError.self) {
+            try config.validate()
+        }
     }
 
     // MARK: - VMConfigError.errorDescription

@@ -27,8 +27,20 @@ let
   ++ [
     "--state-dir"
     cfg.workingDirectory
+    "--hostname"
+    cfg.guestHostname
   ]
   ++ [ "--share-nix-store" ]
+  ++ lib.concatMap (
+    sharedDirectory: [
+      "--shared-directory"
+      (builtins.toJSON {
+        hostPath = sharedDirectory.hostPath;
+        mountPoint = sharedDirectory.mountPoint;
+        readOnly = sharedDirectory.readOnly;
+      })
+    ]
+  ) cfg.sharedDirectories
   ++ lib.optionals (!cfg.rosetta) [ "--no-rosetta" ]
   ++ lib.optionals cfg.verbose [ "--verbose" ]
   ++ lib.optionals (cfg.idleTimeout > 0) [
@@ -85,6 +97,12 @@ in
       description = "Working directory for the VM daemon.";
     };
 
+    guestHostname = lib.mkOption {
+      type = lib.types.str;
+      default = "darwin-vz-guest";
+      description = "Guest hostname advertised over mDNS. The host connects to <guestHostname>.local.";
+    };
+
     kernelPath = lib.mkOption {
       type = lib.types.str;
       description = "Path to the NixOS guest kernel image.";
@@ -129,6 +147,32 @@ in
       description = "Show VM console output in daemon.log. Increases log volume significantly.";
     };
 
+    sharedDirectories = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            hostPath = lib.mkOption {
+              type = lib.types.str;
+              description = "Absolute path to the host directory to expose to the guest.";
+            };
+
+            mountPoint = lib.mkOption {
+              type = lib.types.str;
+              description = "Absolute path where the shared directory will be mounted inside the guest.";
+            };
+
+            readOnly = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether the guest should see the shared directory as read-only.";
+            };
+          };
+        }
+      );
+      default = [ ];
+      description = "Extra host directories to mount inside the guest via VirtioFS.";
+    };
+
     extraNixOSConfig = lib.mkOption {
       type = lib.types.deferredModule;
       default = { };
@@ -167,14 +211,13 @@ in
     nix.settings.builders-use-substitutes = true;
 
     # SSH config for easy connection.
-    # Guest IP is discovered dynamically via DHCP lease and saved to guest-ip file.
-    # ProxyCommand reads the IP at connection time and forwards via nc.
-    # Uses ~ for home directory expansion so it works for any user.
+    # Keep the stable host alias darwin-vz-nix, but resolve it through the
+    # guest's mDNS name instead of a guest-ip state file.
     environment.etc."ssh/ssh_config.d/200-darwin-vz-nix.conf" = {
       text = ''
         Host darwin-vz-nix
           User builder
-          ProxyCommand /bin/sh -c 'exec /usr/bin/nc "$(cat ${cfg.workingDirectory}/guest-ip)" 22'
+          HostName ${cfg.guestHostname}.local
           IdentityFile ~/.ssh/darwin-vz-nix
           StrictHostKeyChecking accept-new
           UserKnownHostsFile ~/.ssh/darwin-vz-nix_known_hosts

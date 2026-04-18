@@ -13,16 +13,21 @@
           "8.8.4.4"
         ];
       };
-      # Explicitly send hostname in DHCP requests to ensure macOS's vmnet
-      # DHCP server records it in /var/db/dhcpd_leases. This enables the
-      # host to discover the guest IP by matching the hostname.
-      # Cross-language contract: must match Constants.guestHostname in Swift.
-      dhcpV4Config = {
-        Hostname = "darwin-vz-guest";
-        UseHostname = false; # Don't let DHCP server override our static hostname
-      };
     };
   };
+
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    publish = {
+      enable = true;
+      addresses = true;
+      workstation = true;
+    };
+  };
+
   networking.useNetworkd = true;
-  networking.hostName = "darwin-vz-guest"; # Cross-language contract: must match Constants.guestHostname in Swift
+  # The default hostname can be overridden at boot via systemd.hostname=<name>
+  # on the kernel command line. Swift uses the same default for direct CLI mode.
+  networking.hostName = "darwin-vz-guest";
 }

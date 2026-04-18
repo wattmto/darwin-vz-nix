@@ -4,28 +4,26 @@ import Testing
 
 @Suite("Networking Integration", .tags(.integration))
 struct NetworkingIntegrationTests {
-    // MARK: - Guest IP Roundtrip
+    // MARK: - Guest hostname roundtrip
 
-    @Test("writeGuestIP then readGuestIP returns same IP")
-    func guestIPRoundtrip() throws {
+    @Test("writeGuestHostname then readGuestHostname returns same hostname")
+    func guestHostnameRoundtrip() throws {
         let tempDir = TestHelpers.createTempDirectory()
         defer { TestHelpers.removeTempItem(at: tempDir) }
 
         let manager = NetworkManager(stateDirectory: tempDir)
-        try manager.writeGuestIP("192.168.64.2")
-        let ip = try manager.readGuestIP()
-        #expect(ip == "192.168.64.2")
+        try manager.writeGuestHostname("custom-guest")
+        let hostname = manager.readGuestHostname()
+        #expect(hostname == "custom-guest")
     }
 
-    @Test("readGuestIP throws guestIPNotFound for non-existent file")
-    func readGuestIPNonExistent() throws {
+    @Test("readGuestHostname returns default for non-existent file")
+    func readGuestHostnameNonExistent() throws {
         let tempDir = TestHelpers.createTempDirectory()
         defer { TestHelpers.removeTempItem(at: tempDir) }
 
         let manager = NetworkManager(stateDirectory: tempDir)
-        #expect(throws: NetworkError.self) {
-            try manager.readGuestIP()
-        }
+        #expect(manager.readGuestHostname() == Constants.defaultGuestHostname)
     }
 
     // MARK: - SSH Key Generation

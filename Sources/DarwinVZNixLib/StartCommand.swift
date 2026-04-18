@@ -24,6 +24,9 @@ public struct Start: AsyncParsableCommand {
     @Option(name: .long, help: "Path to NixOS system toplevel (passed as init= kernel parameter)")
     var system: String?
 
+    @Option(name: .long, help: "Guest hostname for mDNS/SSH (default: darwin-vz-guest)")
+    var hostname: String = Constants.defaultGuestHostname
+
     @Flag(name: .long, inversion: .prefixedNo, help: "Enable Rosetta 2 for x86_64 support (default: true)")
     var rosetta: Bool = true
 
@@ -36,12 +39,16 @@ public struct Start: AsyncParsableCommand {
     @Flag(name: .long, help: "Show VM console output on stderr")
     var verbose: Bool = false
 
+    @Option(name: .long, help: "Share a host directory with the guest. Use hostPath=/path,mountPoint=/guest/path[,readOnly=true] or JSON. Repeat to add multiple shares.")
+    var sharedDirectory: [String] = []
+
     @Option(name: .long, help: "State directory for VM data (default: ~/.local/share/darwin-vz-nix)")
     var stateDir: String?
 
     public init() {}
 
     public mutating func run() async throws {
+        let sharedDirectories = try sharedDirectory.map(SharedDirectory.parse)
         let config = VMConfig(
             cores: cores,
             memory: memory,
@@ -50,8 +57,10 @@ public struct Start: AsyncParsableCommand {
             initrdURL: URL(fileURLWithPath: initrd),
             systemURL: system.map { URL(fileURLWithPath: $0) },
             stateDirectory: stateDir.map { URL(fileURLWithPath: $0) },
+            guestHostname: hostname,
             rosetta: rosetta,
             shareNixStore: shareNixStore,
+            sharedDirectories: sharedDirectories,
             idleTimeout: idleTimeout
         )
 
@@ -69,6 +78,7 @@ public struct Start: AsyncParsableCommand {
 
         let networkManager = NetworkManager(stateDirectory: config.stateDirectory)
         try networkManager.ensureSSHKeys()
+        try config.writeRuntimeConfiguration()
 
         let vmManager = VMManager(config: config, verbose: verbose)
 
@@ -107,18 +117,9 @@ public struct Start: AsyncParsableCommand {
 
         DaemonLogger.vm.info("Starting NixOS VM (cores: \(cores), memory: \(memory)MB, disk: \(diskSize))...")
 
-        let vmStartTime = Date()
         try await vmManager.start()
 
-        // Discover guest IP via DHCP lease polling
-        DaemonLogger.vm.info("Waiting for guest IP address...")
-        do {
-            let guestIP = try await networkManager.discoverGuestIP(notBefore: vmStartTime)
-            try networkManager.writeGuestIP(guestIP)
-            DaemonLogger.vm.info("Guest IP: \(guestIP)")
-        } catch {
-            DaemonLogger.vm.warning("Could not discover guest IP: \(error.localizedDescription)")
-        }
+        DaemonLogger.vm.info("Guest reachable as builder@\(config.guestHostname).local")
 
         DaemonLogger.vm.info("VM is running. Press Ctrl+C to stop.")
 

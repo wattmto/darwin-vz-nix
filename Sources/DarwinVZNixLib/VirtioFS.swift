@@ -26,11 +26,7 @@ enum VirtioFSManager {
             throw VirtioFSError.sharedDirectoryFailed("/nix/store does not exist on host")
         }
 
-        let sharedDir = VZSharedDirectory(url: nixStorePath, readOnly: true)
-        let share = VZSingleDirectoryShare(directory: sharedDir)
-        let fsConfig = VZVirtioFileSystemDeviceConfiguration(tag: Constants.nixStoreTag)
-        fsConfig.share = share
-        return fsConfig
+        return try createDirectoryShare(url: nixStorePath, tag: Constants.nixStoreTag, readOnly: true)
     }
 
     /// Configure Rosetta directory share (if available)
@@ -74,9 +70,33 @@ enum VirtioFSManager {
             throw VirtioFSError.sharedDirectoryFailed("SSH directory does not exist: \(sshDirectory.path)")
         }
 
-        let sharedDir = VZSharedDirectory(url: sshDirectory, readOnly: true)
+        return try createDirectoryShare(url: sshDirectory, tag: Constants.sshKeysTag, readOnly: true)
+    }
+
+    static func createSharedDirectoryConfigShare(configDirectory: URL) throws -> VZVirtioFileSystemDeviceConfiguration {
+        guard FileManager.default.fileExists(atPath: configDirectory.path) else {
+            throw VirtioFSError.sharedDirectoryFailed("Shared directory config directory does not exist: \(configDirectory.path)")
+        }
+
+        return try createDirectoryShare(url: configDirectory, tag: Constants.sharedDirectoryConfigTag, readOnly: true)
+    }
+
+    static func createSharedDirectoryShare(_ sharedDirectory: SharedDirectory, index: Int) throws -> VZVirtioFileSystemDeviceConfiguration {
+        guard FileManager.default.fileExists(atPath: sharedDirectory.hostPath.path) else {
+            throw VirtioFSError.sharedDirectoryFailed("Shared directory host path does not exist: \(sharedDirectory.hostPath.path)")
+        }
+
+        return try createDirectoryShare(
+            url: sharedDirectory.hostPath,
+            tag: Constants.sharedDirectoryTag(for: index),
+            readOnly: sharedDirectory.readOnly
+        )
+    }
+
+    private static func createDirectoryShare(url: URL, tag: String, readOnly: Bool) throws -> VZVirtioFileSystemDeviceConfiguration {
+        let sharedDir = VZSharedDirectory(url: url, readOnly: readOnly)
         let share = VZSingleDirectoryShare(directory: sharedDir)
-        let fsConfig = VZVirtioFileSystemDeviceConfiguration(tag: Constants.sshKeysTag)
+        let fsConfig = VZVirtioFileSystemDeviceConfiguration(tag: tag)
         fsConfig.share = share
         return fsConfig
     }

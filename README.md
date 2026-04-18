@@ -7,7 +7,8 @@ A Swift CLI tool and nix-darwin module that boots NixOS Linux VMs using macOS Vi
 - **Native Performance**: Direct Virtualization.framework integration — no QEMU, no vfkit
 - **Rosetta 2**: Execute x86_64-linux builds at ~70-90% native speed (vs ~10-17x slowdown with QEMU emulation)
 - **VirtioFS + Overlay**: Share host's `/nix/store` with the guest via overlayfs — avoid re-downloading derivations
-- **Auto SSH**: ED25519 keys auto-generated, DHCP-based guest IP discovery via NAT
+- **Auto SSH**: ED25519 keys auto-generated, mDNS-based guest discovery via `hostname.local`
+- **Extra Host Mounts**: Mount additional host directories inside the guest via VirtioFS
 - **Idle Timeout**: Automatically shut down VM after configurable idle period
 - **nix-darwin Module**: Declarative configuration with `services.darwin-vz`
 
@@ -71,12 +72,14 @@ darwin-vz-nix start [OPTIONS]
   --kernel PATH      Path to kernel Image (required)
   --initrd PATH      Path to initrd (required)
   --system PATH      Path to NixOS system toplevel (optional)
+  --hostname NAME    Guest hostname for mDNS/SSH (default: darwin-vz-guest)
   --idle-timeout N   Idle timeout in minutes (0 = disabled, default: 0)
   --rosetta/--no-rosetta    Enable/disable Rosetta 2 (default: enabled)
   --share-nix-store/--no-share-nix-store  Share /nix/store (default: enabled)
+  --shared-directory SPEC   Share a host directory with the guest; repeatable
   --verbose          Show VM console output on stderr
 
-darwin-vz-nix ssh [ARGS...]
+darwin-vz-nix ssh [--hostname NAME] [ARGS...]
 
 darwin-vz-nix stop [OPTIONS]
   --force            Force stop without graceful shutdown
@@ -108,10 +111,17 @@ Then in your nix-darwin configuration:
     memory = 8192;
     diskSize = "100G";
     rosetta = true;
+    guestHostname = "darwin-vz-guest";
     idleTimeout = 180;  # minutes (0 = disabled)
     kernelPath = "${inputs.darwin-vz-nix.packages.aarch64-linux.guest-kernel}/Image";
     initrdPath = "${inputs.darwin-vz-nix.packages.aarch64-linux.guest-initrd}/initrd";
     systemPath = "${inputs.darwin-vz-nix.packages.aarch64-linux.guest-system}";
+    sharedDirectories = [
+      {
+        hostPath = "/Users/alice/workspace";
+        mountPoint = "/mnt/workspace";
+      }
+    ];
   };
 }
 ```
@@ -119,7 +129,7 @@ Then in your nix-darwin configuration:
 This will:
 - Register the VM as a `nix.buildMachines` entry
 - Create a launchd daemon that starts the VM on boot
-- Generate SSH configuration using `ProxyCommand` to dynamically read the guest IP from `${workingDirectory}/guest-ip`
+- Generate SSH configuration that resolves the guest through `${guestHostname}.local`
 - Enable `nix.distributedBuilds`
 - Auto-stop the VM after 180 minutes of idle
 
@@ -133,11 +143,13 @@ This will:
 | `memory` | positive int | `8192` | Memory size in MB |
 | `diskSize` | string | `"100G"` | Disk size (e.g. `"100G"`, `"50G"`) |
 | `rosetta` | bool | `true` | Enable Rosetta 2 for x86_64-linux |
+| `guestHostname` | string | `"darwin-vz-guest"` | Guest hostname advertised over mDNS |
 | `idleTimeout` | unsigned int | `180` | Idle timeout in minutes (0 = disabled) |
 | `kernelPath` | string | *(required)* | Path to guest kernel image |
 | `initrdPath` | string | *(required)* | Path to guest initrd |
 | `systemPath` | string | *(required)* | Path to guest system toplevel |
 | `workingDirectory` | string | `"/var/lib/darwin-vz-nix"` | VM state directory |
+| `sharedDirectories` | list of attrs | `[]` | Extra host directories to mount inside the guest via VirtioFS |
 | `maxJobs` | positive int | same as `cores` | Concurrent build jobs |
 | `protocol` | string | `"ssh-ng"` | Build protocol |
 | `supportedFeatures` | list of string | `["kvm", "benchmark", "big-parallel"]` | Builder features |
@@ -157,10 +169,11 @@ This will:
 │  │     ├─ VZNATNetwork (NAT + DHCP)          │  │
 │  │     ├─ VirtioFS: /nix/store (read-only)   │  │
 │  │     ├─ VirtioFS: Rosetta runtime          │  │
-│  │     └─ VirtioFS: SSH keys                 │  │
+│  │     ├─ VirtioFS: SSH keys                 │  │
+│  │     └─ VirtioFS: Extra host directories   │  │
 │  └───────────────────────────────────────────┘  │
 │           │           │                         │
-│           │  SSH (guest IP via DHCP)            │
+│           │  SSH (mDNS via hostname.local)      │
 │           ▼                                     │
 │  ┌───────────────────────────────────────────┐  │
 │  │  NixOS Guest (aarch64-linux)              │  │
@@ -169,12 +182,13 @@ This will:
 │  │  │   lower: host /nix/store (VirtioFS)    │  │
 │  │  │   upper: tmpfs (writable)              │  │
 │  │  ├─ Rosetta 2 binfmt (x86_64-linux)       │  │
-│  │  └─ OpenSSH (key-only auth)               │  │
+│  │  ├─ OpenSSH (key-only auth)               │  │
+│  │  └─ Avahi + VirtioFS mounts               │  │
 │  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
 
-The host discovers the guest IP address from `/var/db/dhcpd_leases` (macOS vmnet DHCP server) and connects directly to guest IP port 22. No port forwarding is used.
+The host connects to the guest through `builder@<hostname>.local`. The guest advertises its hostname via mDNS (Avahi), and the hostname is also passed at boot time through the kernel command line so direct CLI usage and the nix-darwin module agree on the target name.
 
 ## State Directory
 
@@ -186,7 +200,7 @@ When using the CLI directly, state is stored at `~/.local/share/darwin-vz-nix/`.
 | `ssh/id_ed25519` | SSH private key (auto-generated) |
 | `ssh/id_ed25519.pub` | SSH public key (shared with guest via VirtioFS) |
 | `ssh/known_hosts` | Guest SSH host key cache |
-| `guest-ip` | Guest IP address (DHCP-discovered) |
+| `guest-hostname` | Last configured guest hostname for direct CLI SSH |
 | `vm.pid` | Running VM process ID |
 | `console.log` | VM console output |
 

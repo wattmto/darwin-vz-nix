@@ -10,6 +10,7 @@
     ./filesystems.nix
     ./networking.nix
     ./builder.nix
+    ./shared-directories.nix
     ./rosetta.nix
   ];
 }

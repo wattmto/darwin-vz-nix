@@ -8,6 +8,7 @@ struct SSHCommandTests {
     func defaultExtraArgsEmpty() throws {
         let cmd = try SSH.parse([])
         #expect(cmd.extraArgs == [])
+        #expect(cmd.hostname == nil)
     }
 
     @Test("passthrough arguments after -- are captured in extraArgs")

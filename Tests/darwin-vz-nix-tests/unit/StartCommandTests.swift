@@ -10,8 +10,10 @@ struct StartCommandTests {
         #expect(cmd.cores == 4)
         #expect(cmd.memory == 8192)
         #expect(cmd.diskSize == "100G")
+        #expect(cmd.hostname == Constants.defaultGuestHostname)
         #expect(cmd.rosetta == true)
         #expect(cmd.shareNixStore == true)
+        #expect(cmd.sharedDirectory.isEmpty)
         #expect(cmd.idleTimeout == 0)
         #expect(cmd.verbose == false)
     }
